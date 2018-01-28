@@ -1,19 +1,8 @@
 image: clabu/pushgateway:latest
 manifests:
   -
-    image: clabu/pushgateway:amd64
-    platform:
-      architecture: amd64
-      os: linux
-  -
     image: clabu/pushgateway:armhf
     platform:
       architecture: arm
       variant: v7
-      os: linux
-  -
-    image: clabu/pushgateway:aarch64
-    platform:
-      architecture: arm64
-      variant: v8
       os: linux
