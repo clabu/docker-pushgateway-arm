@@ -1,0 +1,67 @@
+sudo: required
+
+services:
+- docker
+
+addons:
+  apt:
+    packages:
+      - docker-ce
+
+install: skip
+
+jobs:
+  include:
+    - &deploy-stage
+      stage: build and deploy
+      script:
+        # set up the base image
+        - sed -i "s#^FROM .*#FROM ${DOCKER_FROM}#" Dockerfile
+        # setup QEMU
+        - docker run --rm --privileged multiarch/qemu-user-static:register --reset
+        # build
+        - docker build -t pushgateway:$DOCKER_TAG -f Dockerfile --build-arg ARCH=$DOCKER_ARCH --build-arg VERSION=$PUSHGATEWAY_VERSION .
+        # test
+        - docker run --rm pushgateway:$DOCKER_TAG --version
+      after_success:
+        - |
+          docker login -u="clabu" -p="$DOCKER_PASSWORD"
+          if [ "$TRAVIS_BRANCH" == "master" ]; then
+              docker tag pushgateway:$DOCKER_TAG clabu/pushgateway:$DOCKER_TAG
+              docker push clabu/pushgateway:$DOCKER_TAG
+          elif [ "$TRAVIS_BRANCH" == "$PUSHGATEWAY_VERSION" ]; then
+              docker tag pushgateway:$DOCKER_TAG clabu/pushgateway:$PUSHGATEWAY_VERSION-$DOCKER_TAG
+              docker push clabu/pushgateway:$PUSHGATEWAY_VERSION-$DOCKER_TAG
+          fi
+      env:
+        - DOCKER_TAG=amd64
+        - DOCKER_ARCH=amd64
+        - DOCKER_FROM=alpine:latest
+
+    - <<: *deploy-stage
+      env:
+        - DOCKER_TAG=armhf
+        - DOCKER_ARCH=armv7
+        - DOCKER_FROM=rycus86/armhf-alpine-qemu
+
+    - <<: *deploy-stage
+      env:
+        - DOCKER_TAG=aarch64
+        - DOCKER_ARCH=arm64
+        - DOCKER_FROM=rycus86/arm64v8-alpine-qemu
+
+    - stage: manifest
+      script:
+        - |
+          if [ "$TRAVIS_BRANCH" == "$PUSHGATEWAY_VERSION" ]; then
+              sed -i "s#clabu/pushgateway:#clabu/pushgateway:${PUSHGATEWAY_VERSION}-#" manifest.yml
+              sed -i "s#clabu/pushgateway:${PUSHGATEWAY_VERSION}-latest#clabu/pushgateway:${PUSHGATEWAY_VERSION}#" manifest.yml
+          fi
+        - docker login -u="clabu" -p="${DOCKER_PASSWORD}"
+        - curl -fsSL https://github.com/estesp/manifest-tool/releases/download/v0.7.0/manifest-tool-linux-amd64 > ./manifest-tool
+        - chmod +x ./manifest-tool
+        - ./manifest-tool push from-spec manifest.yml
+
+env:
+  global:
+  - PUSHGATEWAY_VERSION=0.4.0
